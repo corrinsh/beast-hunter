@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-cache,no-store,must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
-<title>异兽猎手 v4 - 横屏割草</title>
+<title>异兽猎手 v4.3 - 横屏割草</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
 html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:'Segoe UI',system-ui,sans-serif;touch-action:none}
@@ -109,13 +109,19 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   #topbar{padding:6px 12px}
 }
 
-/* 关卡选择 */
-.level-select{display:flex;gap:8px;overflow-x:auto;padding:4px 0 10px;margin-bottom:16px;-webkit-overflow-scrolling:touch;max-width:100vw}
-.level-card{flex:0 0 96px;background:rgba(255,255,255,.05);border:2px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 6px;cursor:pointer;text-align:center;transition:all .15s}
+/* 关卡选择（v4.3：5大章分组） */
+.level-select{overflow-x:hidden;padding:4px 0 10px;margin-bottom:16px;max-width:100vw}
+.chap-block{margin-bottom:12px}
+.chap-block.locked{opacity:.55}
+.chap-head{display:flex;align-items:baseline;gap:8px;padding:4px 2px 6px;margin-bottom:2px;border-left:3px solid var(--chc);padding-left:8px}
+.chap-title{font-size:14px;font-weight:bold;color:#fff;letter-spacing:1px;white-space:nowrap}
+.chap-meta{font-size:10px;color:#888;white-space:nowrap}
+.chap-levels{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;-webkit-overflow-scrolling:touch}
+.level-card{flex:0 0 88px;background:rgba(255,255,255,.05);border:2px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 4px;cursor:pointer;text-align:center;transition:all .15s}
 .level-card.selected{border-color:#ffd700;background:rgba(255,215,0,.1)}
 .level-card.locked{opacity:.4}
 .level-card:active{transform:scale(.95)}
-.level-num{font-size:15px;font-weight:bold;color:#fff}
+.level-num{font-size:14px;font-weight:bold;color:#fff}
 .level-name{font-size:10px;color:#bbb;margin-top:2px;white-space:nowrap}
 .level-meta{font-size:8px;color:#888;margin-top:3px;line-height:1.4}
 /* 返回选关按钮 */
@@ -178,7 +184,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 <!-- 开始画面 -->
 <div id="start">
   <div class="start-card">
-    <div class="start-title">异兽猎手 <span style="font-size:14px;color:#888;vertical-align:middle">v4</span></div>
+    <div class="start-title">异兽猎手 <span style="font-size:14px;color:#888;vertical-align:middle">v4.3</span></div>
     <div class="start-sub">Roguelike · 割草生存</div>
     <div class="char-select" id="charSelect">
       <div class="char-card selected" data-char="warrior">
@@ -200,7 +206,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <div class="level-select" id="levelSelect"></div>
     <button id="startBtn">开始狩猎</button>
     <button id="openSettingsBtn" class="settings-entry">⚙️ 设置</button>
-    <div class="start-hint">左下摇杆移动 · 右下💨闪避 / 💥爆发<br>敌人进圈自动受击，击杀目标数量通关，练到推荐等级更轻松<br>建议横屏游玩</div>
+    <div class="start-hint">左下摇杆移动 · 右下💨闪避 / 💥爆发<br>共 5 大章 × 20 小关，每章第10关👑中期BOSS · 第20关💀章节BOSS<br>敌人进圈自动受击，击杀目标数量通关，练到推荐等级更轻松<br>建议横屏游玩</div>
   </div>
 </div>
 
@@ -304,15 +310,93 @@ resize();
    游戏状态
    ============================================================ */
 /* ============================================================
-   关卡配置：5关递进难度
+   BOSS 体系 v4.3：每章 中期BOSS(第10关) + 章节BOSS(第20关)
+   image: 对应 assets/boss_*.png（渲染层素材集成时使用）
    ============================================================ */
-var LEVELS=[
-  {id:1,name:'草原边境',theme:'#2f4f2f',mapSize:1500,enemyMul:1.0,spawnInterval:1.35,targetKills:20,recLv:3,bosses:[],types:['zombie','bat','swarmer'],obstacles:5},
-  {id:2,name:'幽暗森林',theme:'#24422e',mapSize:1700,enemyMul:1.35,spawnInterval:1.1,targetKills:35,recLv:5,bosses:['boss1'],types:['zombie','bat','swarmer','brute','shooter'],obstacles:9},
-  {id:3,name:'荒芜峡谷',theme:'#4a3a30',mapSize:1900,enemyMul:1.8,spawnInterval:0.9,targetKills:50,recLv:7,bosses:['boss1'],types:['bat','swarmer','shooter','brute'],obstacles:13},
-  {id:4,name:'冰封高地',theme:'#2c4a52',mapSize:2100,enemyMul:2.4,spawnInterval:0.75,targetKills:70,recLv:9,bosses:['boss2'],types:['swarmer','shooter','brute','bat'],obstacles:17},
-  {id:5,name:'深渊王座',theme:'#3d2148',mapSize:2300,enemyMul:3.2,spawnInterval:0.6,targetKills:100,recLv:12,bosses:['boss1','boss2'],types:['shooter','brute','swarmer','bat'],obstacles:21}
+var BOSS_TYPES={
+  // 第1章 青丘原野
+  boss_01a:{hp:600,speed:0.6,radius:30,damage:22,xp:20,color:'#66bb6a',shape:'star',name:'青木魁',image:'boss_01a'},
+  boss_01b:{hp:1100,speed:0.55,radius:34,damage:30,xp:40,color:'#d32f2f',shape:'star',name:'饕餮',image:'boss_01b'},
+  // 第2章 幽夜密林
+  boss_02a:{hp:900,speed:0.65,radius:30,damage:26,xp:30,color:'#7e57c2',shape:'star',name:'幽冥鬼王',image:'boss_02a'},
+  boss_02b:{hp:1800,speed:0.55,radius:36,damage:36,xp:60,color:'#ef5350',shape:'star',name:'穷奇',image:'boss_02b'},
+  // 第3章 熔火峡谷
+  boss_03a:{hp:1400,speed:0.6,radius:32,damage:32,xp:45,color:'#ff7043',shape:'star',name:'熔岩巨蝎',image:'boss_03a'},
+  boss_03b:{hp:2600,speed:0.5,radius:40,damage:44,xp:90,color:'#ff5722',shape:'star',name:'赤炎异兽',image:'boss_03b'},
+  // 第4章 冰霜雪原
+  boss_04a:{hp:2000,speed:0.55,radius:34,damage:38,xp:65,color:'#4fc3f7',shape:'star',name:'霜雪猿王',image:'boss_04a'},
+  boss_04b:{hp:3600,speed:0.5,radius:42,damage:52,xp:130,color:'#b3e5fc',shape:'star',name:'九婴',image:'boss_04b'},
+  // 第5章 深渊王座
+  boss_05a:{hp:2800,speed:0.55,radius:36,damage:46,xp:100,color:'#ab47bc',shape:'star',name:'腐魂魔菇',image:'boss_05a'},
+  boss_05b:{hp:5200,speed:0.45,radius:48,damage:65,xp:220,color:'#7b1fa2',shape:'star',name:'混沌',image:'boss_05b'}
+};
+
+/* ============================================================
+   关卡配置 v4.3：5大章 × 20小关
+   每章风格独立：地图主题 / 敌人构成 / 中期BOSS(第10关) / 章节BOSS(第20关)
+   功能逻辑零改动：所有消费方仍读 LEVELS[] 固定字段
+   ============================================================ */
+var CHAPTERS=[
+  {
+    name:'青丘原野',theme:'#2f4f2f',bossTheme:'#3a5a2e',mapKey:'grass',mapSize:1500,
+    types0:['zombie','bat','swarmer'],types1:['zombie','zombie','bat','swarmer','brute'],
+    midBoss:'boss_01a',finalBoss:'boss_01b'
+  },
+  {
+    name:'幽夜密林',theme:'#24422e',bossTheme:'#2f3a26',mapKey:'forest',mapSize:1700,
+    types0:['zombie','bat','bat','swarmer','shooter'],types1:['bat','bat','zombie','swarmer','brute','shooter'],
+    midBoss:'boss_02a',finalBoss:'boss_02b'
+  },
+  {
+    name:'熔火峡谷',theme:'#4a2a1e',bossTheme:'#5a2516',mapKey:'canyon',mapSize:1900,
+    types0:['brute','zombie','bat','swarmer'],types1:['brute','brute','zombie','shooter','bat','swarmer'],
+    midBoss:'boss_03a',finalBoss:'boss_03b'
+  },
+  {
+    name:'冰霜雪原',theme:'#2c4a52',bossTheme:'#26404a',mapKey:'snow',mapSize:2100,
+    types0:['shooter','zombie','bat','swarmer'],types1:['shooter','shooter','brute','zombie','bat','swarmer'],
+    midBoss:'boss_04a',finalBoss:'boss_04b'
+  },
+  {
+    name:'深渊王座',theme:'#3d2148',bossTheme:'#4a1f50',mapKey:'abyss',mapSize:2300,
+    types0:['brute','shooter','zombie','bat','swarmer'],types1:['brute','brute','shooter','shooter','zombie','bat','swarmer'],
+    midBoss:'boss_05a',finalBoss:'boss_05b'
+  }
 ];
+
+/* 按曲线展开 5章×20关 = 100 关（只生成数据，功能逻辑读取字段不变） */
+function buildLevels(){
+  var arr=[];
+  var n=1;
+  for(var c=0;c<CHAPTERS.length;c++){
+    var ch=CHAPTERS[c];
+    for(var i=1;i<=20;i++,n++){
+      var isMid=(i===10),isFinal=(i===20);
+      var bossKey=isMid?ch.midBoss:(isFinal?ch.finalBoss:'');
+      var boss=bossKey?BOSS_TYPES[bossKey]:null;
+      var target=Math.round(12+n*1.35);
+      if(bossKey)target=Math.round(target*1.3);   // BOSS关：多杀攒装备再迎战
+      arr.push({
+        id:n,
+        chapter:c+1,
+        name:bossKey?(ch.name+'·'+boss.name):(ch.name+'·第'+i+'关'),
+        theme:bossKey?ch.bossTheme:ch.theme,
+        mapSize:ch.mapSize,
+        enemyMul:Math.round((1+(n-1)*0.045+Math.floor((n-1)/20)*0.5)*100)/100,
+        spawnInterval:Math.max(0.38,Math.round((1.45-n*0.011)*100)/100),
+        targetKills:target,
+        recLv:1+Math.floor((n-1)*0.7),
+        bosses:bossKey?[bossKey]:[],
+        types:(i<=10?ch.types0:ch.types1).slice(),
+        obstacles:Math.min(45,5+Math.floor((n-1)*0.4)),
+        mapKey:ch.mapKey,
+        bossKey:bossKey
+      });
+    }
+  }
+  return arr;
+}
+var LEVELS=buildLevels();
 
 /* ============================================================
    进度存档（localStorage）
@@ -552,11 +636,7 @@ var ENEMY_TYPES={
   shooter:{hp:15,speed:0.6,radius:11,damage:6,xp:2,color:'#00bcd4',shape:'diamond',ranged:true},
   swarmer:{hp:5,speed:1.3,radius:7,damage:3,xp:1,color:'#cddc39',shape:'circle'}
 };
-
-var BOSS_TYPES={
-  boss1:{hp:600,speed:0.6,radius:30,damage:25,xp:20,color:'#d32f2f',shape:'star',name:'巨型异兽'},
-  boss2:{hp:1500,speed:0.5,radius:35,damage:35,xp:50,color:'#7b1fa2',shape:'star',name:'深渊领主'}
-};
+/* BOSS_TYPES 已在关卡配置上方定义（v4.3：10个章节BOSS） */
 
 function spawnEnemy(type,x,y,mul){
   var def=ENEMY_TYPES[type]||BOSS_TYPES[type];
@@ -1827,22 +1907,36 @@ function showMenu(){
    ============================================================ */
 var selectedLevel=1;
 
-// 关卡列表渲染（读解锁进度）
+// 关卡列表渲染（5大章分组，读解锁进度）
 function renderLevelSelect(){
   var el=document.getElementById('levelSelect');
   if(selectedLevel>progress.unlocked)selectedLevel=progress.unlocked;
   var html='';
-  for(var i=0;i<LEVELS.length;i++){
-    var lv=LEVELS[i];
-    var locked=i+1>progress.unlocked;
-    var sel=(i+1)===selectedLevel?' selected':'';
-    var best=progress.best[i+1];
-    var bestTxt=best?('<br>记录Lv'+best.lv):'';
-    html+='<div class="level-card'+(locked?' locked':'')+sel+'" data-lv="'+(i+1)+'">'+
-      '<div class="level-num">'+(locked?'🔒':'第'+(i+1)+'关')+'</div>'+
-      '<div class="level-name">'+lv.name+'</div>'+
-      '<div class="level-meta">推荐Lv'+lv.recLv+'<br>击杀'+lv.targetKills+(locked?'':bestTxt)+'</div>'+
-      '</div>';
+  for(var c=0;c<CHAPTERS.length;c++){
+    var ch=CHAPTERS[c];
+    var chapStart=c*20;
+    var chapLocked=chapStart+1>progress.unlocked;
+    html+='<div class="chap-block'+(chapLocked?' locked':'')+'">'+
+      '<div class="chap-head" style="--chc:'+ch.theme+'">'+
+      '<span class="chap-title">'+(c+1)+' · '+ch.name+'</span>'+
+      '<span class="chap-meta">'+(chapLocked?'🔒 通关上一章解锁':'第'+(chapStart+1)+'-'+(chapStart+20)+'关')+'</span>'+
+      '</div><div class="chap-levels">';
+    for(var i=0;i<20;i++){
+      var gid=chapStart+i+1;
+      var lv=LEVELS[gid-1];
+      var locked=gid>progress.unlocked;
+      var sel=gid===selectedLevel?' selected':'';
+      var best=progress.best[gid];
+      var bestTxt=best?('<br>记录Lv'+best.lv):'';
+      var isBoss=!!lv.bossKey;
+      var tag=isBoss?((i+1)===20?'💀':'👑'):'';
+      html+='<div class="level-card'+(locked?' locked':'')+sel+'" data-lv="'+gid+'">'+
+        '<div class="level-num">'+(locked?'🔒':(tag+'第'+(i+1)+'关'))+'</div>'+
+        '<div class="level-name">'+(isBoss?'BOSS':ch.name)+'</div>'+
+        '<div class="level-meta">推荐Lv'+lv.recLv+'<br>击杀'+lv.targetKills+(locked?'':bestTxt)+'</div>'+
+        '</div>';
+    }
+    html+='</div></div>';
   }
   el.innerHTML=html;
   el.querySelectorAll('.level-card').forEach(function(c){
