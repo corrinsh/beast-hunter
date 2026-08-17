@@ -229,6 +229,7 @@ var projectiles=[];
 var gems=[];
 var particles=[];
 var damageTexts=[];
+var ringFX=[];   // 冲击波/爆发圈特效
 var weapons=[];
 var passives={dodge:0,regen:0,thorns:0,magnet:0};
 var spawnTimer=0;
@@ -239,12 +240,13 @@ var difficultyTimer=0;
    武器系统
    ============================================================ */
 var WEAPON_DEFS={
-  knife:{name:'飞刀',icon:'🔪',desc:'投向最近敌人',cooldown:0.8,damage:12,count:1,pierce:0,spread:0},
-  fireball:{name:'火球',icon:'🔥',desc:'爆炸范围伤害',cooldown:1.5,damage:25,count:1,pierce:0,aoe:50},
-  arrow:{name:'箭雨',icon:'🏹',desc:'射向随机方向',cooldown:1.0,damage:8,count:3,pierce:1,spread:0.6},
-  lightning:{name:'闪电',icon:'⚡',desc:'随机劈击',cooldown:1.2,damage:18,count:1,pierce:99},
-  shield:{name:'护盾',icon:'🛡️',desc:'环绕护卫',cooldown:0,damage:10,count:1,orbit:true},
-  ice:{name:'冰锥',icon:'❄️',desc:'减速穿透',cooldown:1.0,damage:10,count:1,pierce:2,slow:0.5}
+  // mode: orbit=环绕持续伤害 | pulse=蓄力范围爆发 | strike=圈内锁定瞬击
+  knife:{name:'飞刀',icon:'🔪',desc:'近身环绕切割',mode:'orbit',radius:75,damage:11,count:3,color:'#e0e0e0'},
+  fireball:{name:'火球',icon:'🔥',desc:'圈内蓄力爆发',mode:'pulse',radius:120,damage:30,count:1,color:'#ff6f00'},
+  arrow:{name:'箭雨',icon:'🏹',desc:'圈内锁定连射',mode:'strike',radius:150,damage:10,count:2,color:'#66bb6a'},
+  lightning:{name:'闪电',icon:'⚡',desc:'圈内随机劈击',mode:'strike',radius:200,damage:22,count:1,color:'#ffee58'},
+  shield:{name:'护盾',icon:'🛡️',desc:'贴身防御护卫',mode:'orbit',radius:55,damage:9,count:2,color:'#64b5f6'},
+  ice:{name:'冰锥',icon:'❄️',desc:'环绕减速控场',mode:'orbit',radius:95,damage:8,count:3,color:'#80deea'}
 };
 
 var CHAR_WEAPONS={warrior:'knife',mage:'fireball',ranger:'arrow'};
@@ -260,27 +262,25 @@ function addWeapon(type){
   if(existing){
     existing.level++;
     // 升级效果
-    if(type==='knife'){existing.damage+=6;existing.count++}
-    else if(type==='fireball'){existing.damage+=12;existing.aoe+=15}
-    else if(type==='arrow'){existing.count+=2;existing.damage+=3}
-    else if(type==='lightning'){existing.damage+=8;existing.count++}
+    if(type==='knife'){existing.count++;existing.damage+=5}
+    else if(type==='fireball'){existing.radius+=18;existing.damage+=14}
+    else if(type==='arrow'){existing.count++;existing.damage+=4}
+    else if(type==='lightning'){existing.damage+=10;existing.count++}
     else if(type==='shield'){existing.count++;existing.damage+=5}
-    else if(type==='ice'){existing.damage+=5;existing.count++}
+    else if(type==='ice'){existing.count++;existing.damage+=4}
     existing.cooldown=Math.max(0.3,existing.cooldown*0.92);
   }else{
     weapons.push({
       type:type,
       level:1,
+      mode:def.mode,
+      radius:def.radius,
+      color:def.color,
       cooldown:def.cooldown,
       timer:0,
       damage:def.damage,
       count:def.count,
-      pierce:def.pierce||0,
-      spread:def.spread||0,
-      aoe:def.aoe||0,
-      slow:def.slow||0,
-      orbit:def.orbit||false,
-      orbitAngle:0
+      angle:Math.random()*Math.PI*2
     });
   }
   updateWeaponBar();
@@ -320,9 +320,9 @@ var BOSS_TYPES={
 
 function spawnEnemy(type,x,y){
   var def=ENEMY_TYPES[type]||BOSS_TYPES[type];
-  if(!def)return;
+  if(!def)return null;
   var hpScale=1+game.time*0.015; // 随时间增强
-  enemies.push({
+  var e={
     type:type,
     x:x,y:y,
     vx:0,vy:0,
@@ -339,7 +339,9 @@ function spawnEnemy(type,x,y){
     slowTimer:0,
     isBoss:!!BOSS_TYPES[type],
     name:def.name||''
-  });
+  };
+  enemies.push(e);
+  return e;
 }
 
 function spawnWave(){
@@ -380,73 +382,60 @@ function spawnWave(){
 }
 
 /* ============================================================
-   弹幕系统
+   圈内判定攻击系统
+   以玩家为圆心、武器radius为半径，敌人进圈即触发攻击
    ============================================================ */
-function fireWeapon(w){
-  var def=WEAPON_DEFS[w.type];
 
-  if(w.orbit){
-    // 护盾武器不需要发射，持续旋转
-    return;
+// 获取玩家半径范围内的敌人列表
+function enemiesInRange(radius){
+  var r=radius*radius;
+  var list=[];
+  for(var i=0;i<enemies.length;i++){
+    var e=enemies[i];
+    var dx=e.x-player.x,dy=e.y-player.y;
+    if(dx*dx+dy*dy<=r)list.push(e);
   }
+  return list;
+}
 
-  // 找最近敌人
-  function findNearest(){
-    var best=null,bd=9999;
-    for(var i=0;i<enemies.length;i++){
-      var e=enemies[i];
-      var dx=e.x-player.x,dy=e.y-player.y;
-      var d=dx*dx+dy*dy;
-      if(d<bd){bd=d;best=e}
-    }
-    return best;
-  }
+// 圈内触发攻击（pulse/strike 模式在冷却结束后调用）
+function attackInRange(w){
+  var inRange=enemiesInRange(w.radius);
+  if(inRange.length===0)return;
 
-  if(w.type==='lightning'){
-    // 闪电：随机劈击
-    for(var i=0;i<w.count;i++){
-      var targets=enemies.filter(function(e){
-        return Math.random()<0.5;
-      }).slice(0,w.count);
-      if(targets.length===0&&enemies.length>0){
-        targets=[enemies[Math.floor(Math.random()*enemies.length)]];
-      }
-      targets.forEach(function(e){
-        dealDamage(e,w.damage);
-        spawnParticle(e.x,e.y,'#fff',8,0.3);
-        // 闪电效果
-        particles.push({type:'lightning',x:player.x,y:player.y,tx:e.x,ty:e.y,life:0.2,maxLife:0.2});
-      });
-    }
-    return;
-  }
-
-  var target=findNearest();
-  if(!target)return;
-
-  var baseAng=Math.atan2(target.y-player.y,target.x-player.x);
-
-  for(var i=0;i<w.count;i++){
-    var ang=baseAng;
-    if(w.count>1){
-      ang+=w.spread*(i-(w.count-1)/2);
-    }else if(w.spread){
-      ang+=(Math.random()-0.5)*w.spread;
-    }
-
-    projectiles.push({
-      x:player.x,y:player.y,
-      vx:Math.cos(ang)*6,vy:Math.sin(ang)*6,
-      damage:w.damage*player.damageMul,
-      pierce:w.pierce,
-      hits:[],
-      radius:w.type==='fireball'?8:5,
-      type:w.type,
-      aoe:w.aoe||0,
-      slow:w.slow||0,
-      life:2.5,
-      trail:[]
+  if(w.mode==='pulse'){
+    // 火球：圈内全体爆发
+    var dmg=w.damage*player.damageMul;
+    inRange.forEach(function(e){
+      dealDamage(e,dmg);
+      spawnParticle(e.x,e.y,'#ff6f00',5,0.4);
     });
+    // 冲击波圈
+    ringFX.push({x:player.x,y:player.y,r:w.radius,life:0.45,maxLife:0.45,color:w.color});
+    // 圈边缘火焰粒子
+    for(var i=0;i<18;i++){
+      var a=Math.random()*Math.PI*2;
+      var rr=w.radius*(0.8+Math.random()*0.25);
+      spawnParticle(player.x+Math.cos(a)*rr,player.y+Math.sin(a)*rr,'#ffab40',4,0.5);
+    }
+    game.shake=Math.max(game.shake,6);
+    return;
+  }
+
+  // strike：圈内锁定目标瞬击
+  var dmg=w.damage*player.damageMul;
+  for(var i=0;i<Math.min(w.count,inRange.length);i++){
+    var e=inRange[Math.floor(Math.random()*inRange.length)];
+    if(w.type==='lightning'){
+      dealDamage(e,dmg);
+      particles.push({type:'lightning',x:player.x,y:player.y,tx:e.x,ty:e.y,life:0.2,maxLife:0.2});
+      spawnParticle(e.x,e.y,'#ffee58',8,0.3);
+    }else{
+      // 箭：瞬发命中 + 飞行线特效
+      dealDamage(e,dmg);
+      particles.push({type:'arrow',x:player.x,y:player.y,tx:e.x,ty:e.y,life:0.12,maxLife:0.12,color:w.color});
+      spawnParticle(e.x,e.y,'#a5d6a7',4,0.3);
+    }
   }
 }
 
@@ -509,12 +498,12 @@ function spawnParticle(x,y,color,size,life){
    升级系统
    ============================================================ */
 var ALL_UPGRADES=[
-  {type:'weapon',weapon:'knife',icon:'🔪',name:'飞刀',desc:'投向最近敌人',tag:'new'},
-  {type:'weapon',weapon:'fireball',icon:'🔥',name:'火球',desc:'爆炸范围伤害',tag:'new'},
-  {type:'weapon',weapon:'arrow',icon:'🏹',name:'箭雨',desc:'多发随机方向',tag:'new'},
-  {type:'weapon',weapon:'lightning',icon:'⚡',name:'闪电',desc:'随机劈击',tag:'new'},
-  {type:'weapon',weapon:'shield',icon:'🛡️',name:'护盾',desc:'环绕护卫',tag:'new'},
-  {type:'weapon',weapon:'ice',icon:'❄️',name:'冰锥',desc:'减速穿透',tag:'new'},
+  {type:'weapon',weapon:'knife',icon:'🔪',name:'飞刀',desc:'近身环绕切割',tag:'new'},
+  {type:'weapon',weapon:'fireball',icon:'🔥',name:'火球',desc:'圈内蓄力爆发',tag:'new'},
+  {type:'weapon',weapon:'arrow',icon:'🏹',name:'箭雨',desc:'圈内锁定连射',tag:'new'},
+  {type:'weapon',weapon:'lightning',icon:'⚡',name:'闪电',desc:'圈内随机劈击',tag:'new'},
+  {type:'weapon',weapon:'shield',icon:'🛡️',name:'护盾',desc:'贴身防御护卫',tag:'new'},
+  {type:'weapon',weapon:'ice',icon:'❄️',name:'冰锥',desc:'环绕减速控场',tag:'new'},
   {type:'passive',stat:'maxHp',amount:20,icon:'❤️',name:'生命强化',desc:'最大生命+20',tag:'passive'},
   {type:'passive',stat:'speed',amount:0.3,icon:'👟',name:'移速强化',desc:'移动速度+15%',tag:'passive'},
   {type:'passive',stat:'damage',amount:0.1,icon:'💪',name:'攻击强化',desc:'伤害+10%',tag:'passive'},
@@ -721,33 +710,35 @@ function update(dt){
     player.hp=Math.min(player.maxHp,player.hp+passives.regen*dt);
   }
 
-  // 武器冷却 & 发射
+  // 武器圈判定攻击：以玩家为圆心，敌人进圈即触发
   weapons.forEach(function(w){
-    if(w.orbit){
-      w.orbitAngle+=dt*3;
-      return;
-    }
-    w.timer-=dt;
-    if(w.timer<=0){
-      fireWeapon(w);
-      w.timer=w.cooldown*player.cooldownMul;
-    }
-  });
+    w.angle+=dt*2.5;
 
-  // 护盾武器碰撞
-  weapons.filter(function(w){return w.orbit}).forEach(function(w){
-    w.orbitAngle+=dt*3;
-    for(var i=0;i<w.count;i++){
-      var ang=w.orbitAngle+(i/w.count)*Math.PI*2;
-      var sx=player.x+Math.cos(ang)*50;
-      var sy=player.y+Math.sin(ang)*50;
-      enemies.forEach(function(e){
-        var dx=e.x-sx,dy=e.y-sy;
-        if(dx*dx+dy*dy<(e.radius+15)*(e.radius+15)){
-          e.hp-=w.damage*player.damageMul*dt*3;
+    if(w.mode==='orbit'){
+      // 环绕武器：圈内所有敌人持续受击（以玩家为圆心判定）
+      for(var j=0;j<enemies.length;j++){
+        var e=enemies[j];
+        var dx=e.x-player.x,dy=e.y-player.y;
+        if(dx*dx+dy*dy<=w.radius*w.radius){
+          e.hp-=w.damage*player.damageMul*dt*3.5;
           if(e.hp<=0)killEnemy(e);
+          // 冰锥额外减速
+          if(w.type==='ice'){
+            e.slowTimer=Math.max(e.slowTimer,0.5);
+          }
+          // 命中火花（限频）
+          if(Math.random()<dt*8){
+            spawnParticle(e.x,e.y,w.color,3,0.25);
+          }
         }
-      });
+      }
+    }else{
+      // pulse/strike：冷却结束 → 圈内判定攻击
+      w.timer-=dt;
+      if(w.timer<=0){
+        attackInRange(w);
+        w.timer=w.cooldown*player.cooldownMul;
+      }
     }
   });
 
@@ -813,6 +804,23 @@ function update(dt){
     if(p.trail.length>6)p.trail.shift();
 
     if(p.type==='enemy'){
+      // 护盾拦截：进入任一护盾攻击圈即销毁
+      var blocked=false;
+      for(var si=0;si<weapons.length;si++){
+        var sw=weapons[si];
+        if(sw.type!=='shield')continue;
+        var sdx=player.x-p.x,sdy=player.y-p.y;
+        if(sdx*sdx+sdy*sdy<sw.radius*sw.radius){
+          blocked=true;
+          spawnParticle(p.x,p.y,'#64b5f6',4,0.3);
+          break;
+        }
+      }
+      if(blocked){
+        projectiles.splice(i,1);
+        continue;
+      }
+
       // 敌人弹幕打玩家
       var dx=player.x-p.x,dy=player.y-p.y;
       if(dx*dx+dy*dy<(player.radius+p.radius)*(player.radius+p.radius)&&player.invuln<=0){
@@ -825,43 +833,6 @@ function update(dt){
         }
         projectiles.splice(i,1);
         continue;
-      }
-    }else{
-      // 玩家弹幕打敌人
-      for(var j=0;j<enemies.length;j++){
-        var e=enemies[j];
-        if(p.hits.indexOf(e)>=0)continue;
-        var dx=e.x-p.x,dy=e.y-p.y;
-        if(dx*dx+dy*dy<(e.radius+p.radius)*(e.radius+p.radius)){
-          dealDamage(e,p.damage);
-          p.hits.push(e);
-
-          if(p.slow>0){
-            e.slowTimer=2;
-          }
-
-          if(p.aoe>0){
-            // 范围伤害
-            for(var k=0;k<enemies.length;k++){
-              var e2=enemies[k];
-              if(e2===e)continue;
-              var ax=e2.x-p.x,ay=e2.y-p.y;
-              if(ax*ax+ay*ay<p.aoe*p.aoe){
-                dealDamage(e2,p.damage*0.5);
-              }
-            }
-            // 爆炸粒子
-            for(var k=0;k<10;k++){
-              spawnParticle(p.x,p.y,'#ff6f00',5,0.4);
-            }
-          }
-
-          if(p.pierce<=0){
-            projectiles.splice(i,1);
-            break;
-          }
-          p.pierce--;
-        }
       }
     }
 
@@ -905,6 +876,13 @@ function update(dt){
       p.vx*=0.92;
       p.vy*=0.92;
     }
+  }
+
+  // 冲击波圈
+  for(var i=ringFX.length-1;i>=0;i--){
+    var f=ringFX[i];
+    f.life-=dt;
+    if(f.life<=0)ringFX.splice(i,1);
   }
 
   // 伤害文字
@@ -1020,6 +998,30 @@ function render(){
       }
       ctx.stroke();
       ctx.shadowBlur=0;
+    }else if(p.type==='arrow'){
+      // 箭矢瞬击线
+      var ap=1-p.life/p.maxLife;
+      var ax=p.x+(p.tx-p.x)*ap;
+      var ay=p.y+(p.ty-p.y)*ap;
+      ctx.strokeStyle=p.color||'#66bb6a';
+      ctx.lineWidth=2.5;
+      ctx.shadowColor=p.color||'#66bb6a';
+      ctx.shadowBlur=6;
+      ctx.globalAlpha=0.9;
+      ctx.beginPath();
+      ctx.moveTo(p.x,p.y);
+      ctx.lineTo(ax,ay);
+      ctx.stroke();
+      // 箭头
+      var da=Math.atan2(p.ty-p.y,p.tx-p.x);
+      ctx.beginPath();
+      ctx.moveTo(ax+Math.cos(da)*6,ay+Math.sin(da)*6);
+      ctx.lineTo(ax+Math.cos(da+2.5)*5,ay+Math.sin(da+2.5)*5);
+      ctx.lineTo(ax+Math.cos(da-2.5)*5,ay+Math.sin(da-2.5)*5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha=1;
+      ctx.shadowBlur=0;
     }else{
       var alpha=p.life/p.maxLife;
       ctx.globalAlpha=alpha;
@@ -1027,6 +1029,38 @@ function render(){
       ctx.beginPath();
       ctx.arc(p.x,p.y,p.size*alpha,0,Math.PI*2);
       ctx.fill();
+      ctx.globalAlpha=1;
+    }
+  });
+
+  // 攻击圈：以玩家为圆心的武器范围指示
+  weapons.forEach(function(w){
+    // 虚线范围圈
+    ctx.strokeStyle=w.color;
+    ctx.globalAlpha=0.22;
+    ctx.lineWidth=2;
+    ctx.setLineDash([6,6]);
+    ctx.beginPath();
+    ctx.arc(player.x,player.y,w.radius,0,Math.PI*2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 内圈淡色填充
+    ctx.globalAlpha=0.05;
+    ctx.fillStyle=w.color;
+    ctx.beginPath();
+    ctx.arc(player.x,player.y,w.radius,0,Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha=1;
+
+    // 蓄力预警（pulse 武器即将爆发时收缩高亮圈）
+    if(w.mode==='pulse'&&w.timer<0.5){
+      var warn=0.5+Math.sin(game.time*20)*0.1;
+      ctx.globalAlpha=warn;
+      ctx.strokeStyle=w.color;
+      ctx.lineWidth=3;
+      ctx.beginPath();
+      ctx.arc(player.x,player.y,w.radius*(0.85+w.timer*0.3),0,Math.PI*2);
+      ctx.stroke();
       ctx.globalAlpha=1;
     }
   });
@@ -1131,25 +1165,73 @@ function render(){
     ctx.restore();
   });
 
-  // 护盾武器
-  weapons.filter(function(w){return w.orbit}).forEach(function(w){
+  // 环绕武器元素（刀/盾/冰锥绕玩家旋转）
+  weapons.forEach(function(w){
+    if(w.mode!=='orbit')return;
     for(var i=0;i<w.count;i++){
-      var ang=w.orbitAngle+(i/w.count)*Math.PI*2;
-      var ox=player.x+Math.cos(ang)*50;
-      var oy=player.y+Math.sin(ang)*50;
-      ctx.fillStyle='rgba(100,181,246,0.6)';
-      ctx.shadowColor='#64b5f6';
+      var ang=w.angle+(i/w.count)*Math.PI*2;
+      var ox=player.x+Math.cos(ang)*w.radius*0.92;
+      var oy=player.y+Math.sin(ang)*w.radius*0.92;
+
+      ctx.save();
+      ctx.translate(ox,oy);
+      ctx.rotate(ang+Math.PI/2);
+      ctx.shadowColor=w.color;
       ctx.shadowBlur=10;
-      ctx.beginPath();
-      ctx.arc(ox,oy,12,0,Math.PI*2);
-      ctx.fill();
-      ctx.strokeStyle='rgba(255,255,255,0.3)';
-      ctx.lineWidth=2;
-      ctx.beginPath();
-      ctx.arc(ox,oy,15,0,Math.PI*2);
-      ctx.stroke();
+
+      if(w.type==='knife'){
+        // 刀片：菱形
+        ctx.fillStyle='#e0e0e0';
+        ctx.beginPath();
+        ctx.moveTo(0,-10);
+        ctx.lineTo(4,0);
+        ctx.lineTo(0,10);
+        ctx.lineTo(-4,0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle='#b0bec5';
+        ctx.lineWidth=1;
+        ctx.stroke();
+      }else if(w.type==='shield'){
+        // 圆盾
+        ctx.fillStyle='rgba(100,181,246,0.7)';
+        ctx.beginPath();
+        ctx.arc(0,0,11,0,Math.PI*2);
+        ctx.fill();
+        ctx.strokeStyle='rgba(255,255,255,0.5)';
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.arc(0,0,14,0,Math.PI*2);
+        ctx.stroke();
+      }else if(w.type==='ice'){
+        // 冰锥：三角
+        ctx.fillStyle='rgba(128,222,234,0.85)';
+        ctx.beginPath();
+        ctx.moveTo(0,-11);
+        ctx.lineTo(5,6);
+        ctx.lineTo(-5,6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle='rgba(255,255,255,0.4)';
+        ctx.lineWidth=1;
+        ctx.stroke();
+      }
+
       ctx.shadowBlur=0;
+      ctx.restore();
     }
+  });
+
+  // 冲击波圈（火球爆发等）
+  ringFX.forEach(function(f){
+    var p=1-f.life/f.maxLife;
+    ctx.globalAlpha=Math.max(0,f.life/f.maxLife);
+    ctx.strokeStyle=f.color;
+    ctx.lineWidth=5*(1-p)+1;
+    ctx.beginPath();
+    ctx.arc(f.x,f.y,f.r*(0.4+p*0.6),0,Math.PI*2);
+    ctx.stroke();
+    ctx.globalAlpha=1;
   });
 
   // 玩家
@@ -1244,6 +1326,7 @@ function startGame(charType){
   gems=[];
   particles=[];
   damageTexts=[];
+  ringFX=[];
   weapons=[];
   passives={dodge:0,regen:0,thorns:0,magnet:0};
   spawnTimer=0.5;
