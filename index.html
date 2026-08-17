@@ -120,6 +120,24 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 .level-meta{font-size:8px;color:#888;margin-top:3px;line-height:1.4}
 /* 返回选关按钮 */
 .go-menu{background:rgba(255,255,255,.1);color:#ccc;border:none;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;width:100%;margin-top:8px}
+
+/* ===== 设置面板（v4.2） ===== */
+.settings-entry{background:rgba(255,255,255,.1);color:#ccc;border:1px solid rgba(255,255,255,.15);padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;width:100%;margin-top:10px;transition:background .15s}
+.settings-entry:active{background:rgba(255,255,255,.2)}
+#settings{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;justify-content:center;align-items:center;z-index:35;pointer-events:auto}
+#settings.show{display:flex}
+.set-card{background:#1a1a2e;border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:22px;width:88%;max-width:420px;max-height:86vh;overflow-y:auto}
+.set-title{font-size:20px;color:#fff;text-align:center;margin-bottom:16px}
+.set-group{margin-bottom:16px}
+.set-label{font-size:13px;color:#ddd;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.set-desc{font-size:10px;color:#777;margin-top:6px;line-height:1.5}
+.set-opts{display:flex;gap:8px}
+.set-opt{flex:1;text-align:center;padding:10px 6px;border-radius:8px;border:2px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#bbb;font-size:13px;cursor:pointer;transition:all .15s}
+.set-opt.sel{border-color:#ffd700;background:rgba(255,215,0,.12);color:#ffd700;font-weight:bold}
+.set-opt:active{transform:scale(.96)}
+#sensRange{width:100%;accent-color:#ffd700;height:28px}
+#sensVal{color:#ffd700;font-weight:bold}
+#setBack{background:linear-gradient(135deg,#43a047,#66bb6a);color:#fff;border:none;padding:12px;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;width:100%}
 </style>
 </head>
 <body>
@@ -181,6 +199,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     </div>
     <div class="level-select" id="levelSelect"></div>
     <button id="startBtn">开始狩猎</button>
+    <button id="openSettingsBtn" class="settings-entry">⚙️ 设置</button>
     <div class="start-hint">左下摇杆移动 · 右下💨闪避 / 💥爆发<br>敌人进圈自动受击，击杀目标数量通关，练到推荐等级更轻松<br>建议横屏游玩</div>
   </div>
 </div>
@@ -199,6 +218,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   <div class="pause-card">
     <div class="pause-title">已暂停</div>
     <button id="resumeBtn">继续</button>
+    <button id="pauseSettingsBtn" class="settings-entry">⚙️ 设置</button>
     <button id="quitBtn">放弃本局</button>
   </div>
 </div>
@@ -213,6 +233,36 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
   </div>
 </div>
 
+<!-- 设置面板（v4.2：摇杆模式/灵敏度/画质） -->
+<div id="settings">
+  <div class="set-card">
+    <div class="set-title">⚙️ 设置</div>
+    <div class="set-group">
+      <div class="set-label">摇杆模式</div>
+      <div class="set-opts" id="setJoyMode">
+        <div class="set-opt" data-v="fixed">📍 固定</div>
+        <div class="set-opt" data-v="float">👆 跟手</div>
+      </div>
+      <div class="set-desc">固定：摇杆始终在左下角；跟手：手指点哪底座出现在哪</div>
+    </div>
+    <div class="set-group">
+      <div class="set-label">摇杆灵敏度 <span id="sensVal">100%</span></div>
+      <input type="range" id="sensRange" min="50" max="150" value="100" step="5">
+      <div class="set-desc">越高角色移动越快，越低操控越精细</div>
+    </div>
+    <div class="set-group">
+      <div class="set-label">画质</div>
+      <div class="set-opts" id="setQuality">
+        <div class="set-opt" data-v="high">✨ 高清</div>
+        <div class="set-opt" data-v="med">⚖️ 均衡</div>
+        <div class="set-opt" data-v="low">⚡ 流畅</div>
+      </div>
+      <div class="set-desc">低：省电减特效；高：满特效满清晰度（老机型建议流畅）</div>
+    </div>
+    <button id="setBack">返回</button>
+  </div>
+</div>
+
 <script>
 /* ============================================================
    异兽猎手 — Roguelike 割草生存
@@ -223,8 +273,22 @@ var canvas=document.getElementById('game');
 var ctx=canvas.getContext('2d');
 var W=0,H=0,DPR=1;
 
+/* ============================================================
+   玩家设置（v4.2）：摇杆模式/灵敏度/画质，localStorage持久化
+   ============================================================ */
+var SETTINGS_KEY='beast_hunter_settings';
+var SETTINGS={joyMode:'fixed',sens:1,quality:'med'};
+try{
+  var _saved=JSON.parse(localStorage.getItem(SETTINGS_KEY)||'null');
+  if(_saved){for(var _k in SETTINGS){if(_saved[_k]!==undefined)SETTINGS[_k]=_saved[_k];}}
+}catch(e){}
+function saveSettings(){
+  try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(SETTINGS));}catch(e){}
+}
+
 function resize(){
-  DPR=Math.min(window.devicePixelRatio||1,2);
+  var maxDPR=SETTINGS.quality==='high'?2:(SETTINGS.quality==='med'?1.5:1);
+  DPR=Math.min(window.devicePixelRatio||1,maxDPR);
   W=window.innerWidth;
   H=window.innerHeight;
   canvas.width=W*DPR;
@@ -679,7 +743,9 @@ function killEnemy(e){
 /* ============================================================
    粒子 & 特效
    ============================================================ */
+var PARTICLE_RATE={high:1,med:0.7,low:0.4};  // 画质粒子系数（v4.2）
 function spawnParticle(x,y,color,size,life){
+  if(Math.random()>PARTICLE_RATE[SETTINGS.quality])return;  // 低画质减粒
   var ang=Math.random()*Math.PI*2;
   var spd=1+Math.random()*3;
   particles.push({
@@ -796,14 +862,19 @@ function levelUp(){
 }
 
 /* ============================================================
-   输入：固定虚拟摇杆（v4横屏，左下角固定）
+   输入：虚拟摇杆（v4.2 支持固定/跟手双模式）
    ============================================================ */
-var joy={active:false,dx:0,dy:0,touchId:null};
+var joy={active:false,dx:0,dy:0,touchId:null,baseX:0,baseY:0};
 var stickBase=document.getElementById('stickBase');
 var stickKnob=document.getElementById('stickKnob');
 var joyArea=document.getElementById('joystick');
 var joyCX=0,joyCY=0,joyMaxD=56;
 
+/* 摇杆基准点：固定→区域中心；跟手→按下位置 */
+function joyBase(){
+  if(SETTINGS.joyMode==='float'&&joy.active)return {x:joy.baseX,y:joy.baseY};
+  return {x:joyCX,y:joyCY};
+}
 /* 摇杆中心 = 摇杆区域中心（resize时重算） */
 function centerStick(){
   var r=joyArea.getBoundingClientRect();
@@ -814,18 +885,44 @@ function centerStick(){
   stickBase.style.top=joyCY+'px';
   stickKnob.style.left=joyCX+'px';
   stickKnob.style.top=joyCY+'px';
+  /* 跟手模式初始隐藏，固定模式常显 */
+  if(SETTINGS.joyMode==='float'&&!joy.active){
+    stickBase.style.display='none';
+    stickKnob.style.display='none';
+  }else{
+    stickBase.style.display='block';
+    stickKnob.style.display='block';
+  }
 }
 window.addEventListener('resize',centerStick);
 centerStick();
 
+/* 应用摇杆模式切换（设置页调用） */
+function applyJoyMode(){
+  joy.active=false;joy.dx=0;joy.dy=0;
+  centerStick();
+}
+
 joyArea.addEventListener('touchstart',function(e){
   e.preventDefault();
   if(joy.active)return;
+  var t=e.changedTouches[0];
   joy.active=true;
-  joy.touchId=e.changedTouches[0].identifier;
+  joy.touchId=t.identifier;
+  if(SETTINGS.joyMode==='float'){
+    joy.baseX=t.clientX;
+    joy.baseY=t.clientY;
+  }else{
+    joy.baseX=joyCX;joy.baseY=joyCY;
+  }
   joy.dx=0;joy.dy=0;
-  stickKnob.style.left=joyCX+'px';
-  stickKnob.style.top=joyCY+'px';
+  var b=joyBase();
+  stickBase.style.display='block';
+  stickKnob.style.display='block';
+  stickBase.style.left=b.x+'px';
+  stickBase.style.top=b.y+'px';
+  stickKnob.style.left=b.x+'px';
+  stickKnob.style.top=b.y+'px';
 },{passive:false});
 
 joyArea.addEventListener('touchmove',function(e){
@@ -833,14 +930,15 @@ joyArea.addEventListener('touchmove',function(e){
   for(var i=0;i<e.changedTouches.length;i++){
     var t=e.changedTouches[i];
     if(t.identifier!==joy.touchId)continue;
-    var dx=t.clientX-joyCX;
-    var dy=t.clientY-joyCY;
+    var b=joyBase();
+    var dx=t.clientX-b.x;
+    var dy=t.clientY-b.y;
     var d=Math.sqrt(dx*dx+dy*dy);
     if(d>joyMaxD){dx=dx/d*joyMaxD;dy=dy/d*joyMaxD;d=joyMaxD}
     joy.dx=dx/joyMaxD;
     joy.dy=dy/joyMaxD;
-    stickKnob.style.left=(joyCX+dx)+'px';
-    stickKnob.style.top=(joyCY+dy)+'px';
+    stickKnob.style.left=(b.x+dx)+'px';
+    stickKnob.style.top=(b.y+dy)+'px';
   }
 },{passive:false});
 
@@ -850,8 +948,13 @@ function endTouch(e){
       joy.active=false;
       joy.dx=0;joy.dy=0;
       joy.touchId=null;
-      stickKnob.style.left=joyCX+'px';
-      stickKnob.style.top=joyCY+'px';
+      if(SETTINGS.joyMode==='float'){
+        stickBase.style.display='none';
+        stickKnob.style.display='none';
+      }else{
+        stickKnob.style.left=joyCX+'px';
+        stickKnob.style.top=joyCY+'px';
+      }
     }
   }
 }
@@ -861,25 +964,42 @@ joyArea.addEventListener('touchcancel',endTouch,{passive:false});
 // 鼠标支持（桌面测试）
 joyArea.addEventListener('mousedown',function(e){
   joy.active=true;
+  if(SETTINGS.joyMode==='float'){
+    joy.baseX=e.clientX;
+    joy.baseY=e.clientY;
+  }else{
+    joy.baseX=joyCX;joy.baseY=joyCY;
+  }
   joy.dx=0;joy.dy=0;
-  stickKnob.style.left=joyCX+'px';
-  stickKnob.style.top=joyCY+'px';
+  var b=joyBase();
+  stickBase.style.display='block';
+  stickKnob.style.display='block';
+  stickBase.style.left=b.x+'px';
+  stickBase.style.top=b.y+'px';
+  stickKnob.style.left=b.x+'px';
+  stickKnob.style.top=b.y+'px';
 });
 window.addEventListener('mousemove',function(e){
   if(!joy.active)return;
-  var dx=e.clientX-joyCX;
-  var dy=e.clientY-joyCY;
+  var b=joyBase();
+  var dx=e.clientX-b.x;
+  var dy=e.clientY-b.y;
   var d=Math.sqrt(dx*dx+dy*dy);
   if(d>joyMaxD){dx=dx/d*joyMaxD;dy=dy/d*joyMaxD}
   joy.dx=dx/joyMaxD;joy.dy=dy/joyMaxD;
-  stickKnob.style.left=(joyCX+dx)+'px';
-  stickKnob.style.top=(joyCY+dy)+'px';
+  stickKnob.style.left=(b.x+dx)+'px';
+  stickKnob.style.top=(b.y+dy)+'px';
 });
 window.addEventListener('mouseup',function(){
   if(!joy.active)return;
   joy.active=false;joy.dx=0;joy.dy=0;
-  stickKnob.style.left=joyCX+'px';
-  stickKnob.style.top=joyCY+'px';
+  if(SETTINGS.joyMode==='float'){
+    stickBase.style.display='none';
+    stickKnob.style.display='none';
+  }else{
+    stickKnob.style.left=joyCX+'px';
+    stickKnob.style.top=joyCY+'px';
+  }
 });
 
 /* ============================================================
@@ -892,8 +1012,8 @@ function update(dt){
 
   game.time+=dt;
 
-  // 玩家移动
-  var spd=player.speed*player.speedMul;
+  // 玩家移动（v4.2 乘灵敏度系数）
+  var spd=player.speed*player.speedMul*SETTINGS.sens;
   player.vx=joy.dx*spd;
   player.vy=joy.dy*spd;
   // 冲刺叠加（v4主动技能）
@@ -1164,11 +1284,12 @@ function render(){
   ctx.fillStyle='#0a0a0f';
   ctx.fillRect(0,0,W,H);
 
-  // 屏幕震动偏移
+  // 屏幕震动偏移（低画质减弱）
   var sx=0,sy=0;
   if(game.shake>0){
-    sx=(Math.random()-0.5)*game.shake;
-    sy=(Math.random()-0.5)*game.shake;
+    var shk=game.shake*(SETTINGS.quality==='low'?0.3:(SETTINGS.quality==='med'?0.6:1));
+    sx=(Math.random()-0.5)*shk;
+    sy=(Math.random()-0.5)*shk;
   }
   ctx.save();
   ctx.translate(sx,sy);
@@ -1194,7 +1315,8 @@ function render(){
     ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(mapW,y);ctx.stroke();
   }
 
-  // 地面装饰（草丛/小石）
+  // 地面装饰（草丛/小石）— 流畅画质跳过
+  if(SETTINGS.quality!=='low'){
   decorations.forEach(function(d){
     if(d.x<camX-30||d.x>camX+W+30||d.y<camY-30||d.y>camY+H+30)return;
     if(d.type==='grass'){
@@ -1212,6 +1334,7 @@ function render(){
       ctx.fill();
     }
   });
+  }
 
   // 地图边界墙
   ctx.strokeStyle='rgba(255,215,0,0.6)';
@@ -1771,6 +1894,52 @@ document.getElementById('quitBtn').onclick=function(){
   game.paused=false;
   document.getElementById('pause').classList.remove('show');
   showMenu();
+};
+
+/* v4.2 设置面板：摇杆模式/灵敏度/画质 */
+var settingsFrom='menu';
+function openSettings(from){
+  settingsFrom=from;
+  renderSettings();
+  document.getElementById('settings').classList.add('show');
+}
+function renderSettings(){
+  document.querySelectorAll('#setJoyMode .set-opt').forEach(function(o){
+    o.classList.toggle('sel',o.dataset.v===SETTINGS.joyMode);
+  });
+  document.querySelectorAll('#setQuality .set-opt').forEach(function(o){
+    o.classList.toggle('sel',o.dataset.v===SETTINGS.quality);
+  });
+  var sr=document.getElementById('sensRange');
+  sr.value=Math.round(SETTINGS.sens*100);
+  document.getElementById('sensVal').textContent=sr.value+'%';
+}
+document.getElementById('openSettingsBtn').onclick=function(){openSettings('menu')};
+document.getElementById('pauseSettingsBtn').onclick=function(){openSettings('pause')};
+document.getElementById('setBack').onclick=function(){
+  document.getElementById('settings').classList.remove('show');
+  if(settingsFrom==='pause')document.getElementById('pause').classList.add('show');
+};
+document.querySelectorAll('#setJoyMode .set-opt').forEach(function(o){
+  o.onclick=function(){
+    SETTINGS.joyMode=o.dataset.v;
+    saveSettings();
+    applyJoyMode();
+    renderSettings();
+  };
+});
+document.querySelectorAll('#setQuality .set-opt').forEach(function(o){
+  o.onclick=function(){
+    SETTINGS.quality=o.dataset.v;
+    saveSettings();
+    resize();
+    renderSettings();
+  };
+});
+document.getElementById('sensRange').oninput=function(){
+  SETTINGS.sens=this.value/100;
+  document.getElementById('sensVal').textContent=this.value+'%';
+  saveSettings();
 };
 
 /* v4 主动技能按钮（按下即触发） */
