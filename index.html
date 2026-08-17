@@ -85,6 +85,18 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #weapons{position:absolute;bottom:8px;right:8px;display:flex;gap:6px}
 .wpn-icon{width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);display:flex;justify-content:center;align-items:center;font-size:16px}
 .wpn-lv{position:absolute;bottom:-2px;right:-2px;font-size:8px;background:#ffd700;color:#000;border-radius:4px;padding:0 3px;font-weight:bold}
+
+/* 关卡选择 */
+.level-select{display:flex;gap:8px;overflow-x:auto;padding:4px 0 10px;margin-bottom:16px;-webkit-overflow-scrolling:touch;max-width:100vw}
+.level-card{flex:0 0 96px;background:rgba(255,255,255,.05);border:2px solid rgba(255,255,255,.1);border-radius:10px;padding:10px 6px;cursor:pointer;text-align:center;transition:all .15s}
+.level-card.selected{border-color:#ffd700;background:rgba(255,215,0,.1)}
+.level-card.locked{opacity:.4}
+.level-card:active{transform:scale(.95)}
+.level-num{font-size:15px;font-weight:bold;color:#fff}
+.level-name{font-size:10px;color:#bbb;margin-top:2px;white-space:nowrap}
+.level-meta{font-size:8px;color:#888;margin-top:3px;line-height:1.4}
+/* 返回选关按钮 */
+.go-menu{background:rgba(255,255,255,.1);color:#ccc;border:none;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;width:100%;margin-top:8px}
 </style>
 </head>
 <body>
@@ -99,8 +111,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
       <div class="bar" style="height:8px"><div class="bar-fill" id="xpFill" style="width:0%"></div></div>
     </div>
     <div>
-      <div id="timer">0:00</div>
-      <div id="kills">击杀 0</div>
+      <div id="timer">第1关</div>
+      <div id="kills">击杀 0/20</div>
     </div>
     <div style="width:44px"></div>
   </div>
@@ -137,8 +149,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
         <div class="char-desc">速移+箭雨</div>
       </div>
     </div>
+    <div class="level-select" id="levelSelect"></div>
     <button id="startBtn">开始狩猎</button>
-    <div class="start-hint">左半屏拖动移动 · 自动攻击<br>升级选技能 · 活到最后</div>
+    <div class="start-hint">左半屏拖动移动 · 自动攻击 · 敌人进圈受击<br>击杀目标数量通关，练到推荐等级更轻松</div>
   </div>
 </div>
 
@@ -166,6 +179,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <div class="go-title">你寄了</div>
     <div class="go-stats" id="goStats"></div>
     <button id="restartBtn">再来一局</button>
+    <button id="menuBtn" class="go-menu">返回选关</button>
   </div>
 </div>
 
@@ -195,10 +209,34 @@ resize();
 /* ============================================================
    游戏状态
    ============================================================ */
-var GAME_TIME=180; // 3分钟
+/* ============================================================
+   关卡配置：5关递进难度
+   ============================================================ */
+var LEVELS=[
+  {id:1,name:'草原边境',theme:'#2f4f2f',mapSize:1500,enemyMul:1.0,spawnInterval:1.35,targetKills:20,recLv:3,bosses:[],types:['zombie','bat','swarmer'],obstacles:5},
+  {id:2,name:'幽暗森林',theme:'#24422e',mapSize:1700,enemyMul:1.35,spawnInterval:1.1,targetKills:35,recLv:5,bosses:['boss1'],types:['zombie','bat','swarmer','brute','shooter'],obstacles:9},
+  {id:3,name:'荒芜峡谷',theme:'#4a3a30',mapSize:1900,enemyMul:1.8,spawnInterval:0.9,targetKills:50,recLv:7,bosses:['boss1'],types:['bat','swarmer','shooter','brute'],obstacles:13},
+  {id:4,name:'冰封高地',theme:'#2c4a52',mapSize:2100,enemyMul:2.4,spawnInterval:0.75,targetKills:70,recLv:9,bosses:['boss2'],types:['swarmer','shooter','brute','bat'],obstacles:17},
+  {id:5,name:'深渊王座',theme:'#3d2148',mapSize:2300,enemyMul:3.2,spawnInterval:0.6,targetKills:100,recLv:12,bosses:['boss1','boss2'],types:['shooter','brute','swarmer','bat'],obstacles:21}
+];
+
+/* ============================================================
+   进度存档（localStorage）
+   ============================================================ */
+var SAVE_KEY='beast_hunter_progress';
+function loadProgress(){
+  try{return JSON.parse(localStorage.getItem(SAVE_KEY))||{unlocked:1,best:{}}}
+  catch(e){return{unlocked:1,best:{}}}
+}
+function saveProgress(){
+  try{localStorage.setItem(SAVE_KEY,JSON.stringify(progress))}catch(e){}
+}
+var progress=loadProgress();
+
 var game={
   running:false,
   paused:false,
+  levelIdx:0,   // 当前关卡（0起）
   time:0,
   kills:0,
   level:1,
@@ -233,8 +271,88 @@ var ringFX=[];   // 冲击波/爆发圈特效
 var weapons=[];
 var passives={dodge:0,regen:0,thorns:0,magnet:0};
 var spawnTimer=0;
-var spawnRate=1.2; // 秒/波
-var difficultyTimer=0;
+
+/* ============================================================
+   地图系统：大地图 + 障碍物 + 摄像机
+   ============================================================ */
+var mapW=1500,mapH=1500;
+var camX=0,camY=0;
+var obstacles=[];
+var decorations=[];
+var bossSpawned=false;
+var levelCleared=false;
+
+/* 屏幕提示（BOSS出现/通关等） */
+var toast={text:'',timer:0};
+function toastShow(text){
+  toast.text=text;
+  toast.timer=2;
+}
+
+/* 生成关卡地图：障碍物（石柱）+ 装饰散点 */
+function genMap(levelIdx){
+  var cfg=LEVELS[levelIdx];
+  mapW=cfg.mapSize;
+  mapH=cfg.mapSize;
+  obstacles=[];
+  decorations=[];
+  var tries=0;
+  while(obstacles.length<cfg.obstacles&&tries<600){
+    tries++;
+    var r=20+Math.random()*14;
+    var x=r+Math.random()*(mapW-r*2);
+    var y=r+Math.random()*(mapH-r*2);
+    // 离出生点（地图中心）太近的不放
+    var dx=x-mapW/2,dy=y-mapH/2;
+    if(dx*dx+dy*dy<320*320)continue;
+    var ok=true;
+    for(var i=0;i<obstacles.length;i++){
+      var o=obstacles[i];
+      var ddx=x-o.x,ddy=y-o.y;
+      if(ddx*ddx+ddy*ddy<(r+o.radius+70)*(r+o.radius+70)){ok=false;break}
+    }
+    if(ok)obstacles.push({x:x,y:y,radius:r});
+  }
+  // 装饰散点（草丛/小石）
+  for(var i=0;i<90;i++){
+    decorations.push({
+      x:Math.random()*mapW,
+      y:Math.random()*mapH,
+      type:Math.random()<0.6?'grass':'rock',
+      size:2+Math.random()*4
+    });
+  }
+}
+
+/* 障碍物碰撞：圆形石柱推出 + 地图边界约束 */
+function resolveObstacles(obj,radius){
+  for(var i=0;i<obstacles.length;i++){
+    var o=obstacles[i];
+    var dx=obj.x-o.x,dy=obj.y-o.y;
+    var d=Math.sqrt(dx*dx+dy*dy);
+    var min=radius+o.radius;
+    if(d<min){
+      if(d>0.01){
+        obj.x=o.x+dx/d*min;
+        obj.y=o.y+dy/d*min;
+      }else{
+        obj.x=o.x+min;
+      }
+    }
+  }
+  obj.x=Math.max(radius,Math.min(mapW-radius,obj.x));
+  obj.y=Math.max(radius,Math.min(mapH-radius,obj.y));
+}
+
+/* 摄像机跟随（clamp 在地图内） */
+function updateCamera(){
+  camX=player.x-W/2;
+  camY=player.y-H/2;
+  if(camX<0)camX=0;
+  if(camY<0)camY=0;
+  if(camX>mapW-W)camX=mapW-W;
+  if(camY>mapH-H)camY=mapH-H;
+}
 
 /* ============================================================
    武器系统
@@ -318,16 +436,16 @@ var BOSS_TYPES={
   boss2:{hp:1500,speed:0.5,radius:35,damage:35,xp:50,color:'#7b1fa2',shape:'star',name:'深渊领主'}
 };
 
-function spawnEnemy(type,x,y){
+function spawnEnemy(type,x,y,mul){
   var def=ENEMY_TYPES[type]||BOSS_TYPES[type];
   if(!def)return null;
-  var hpScale=1+game.time*0.015; // 随时间增强
+  var m=mul||1;
   var e={
     type:type,
     x:x,y:y,
     vx:0,vy:0,
-    hp:def.hp*hpScale,
-    maxHp:def.hp*hpScale,
+    hp:def.hp*m,
+    maxHp:def.hp*m,
     speed:def.speed,
     radius:def.radius,
     damage:def.damage,
@@ -345,40 +463,60 @@ function spawnEnemy(type,x,y){
 }
 
 function spawnWave(){
-  var t=game.time;
-  var count=Math.floor(3+t*0.15);
-  var types=[];
-
-  if(t<20){
-    types=['zombie','zombie','bat'];
-  }else if(t<45){
-    types=['zombie','bat','bat','swarmer'];
-  }else if(t<75){
-    types=['zombie','bat','swarmer','brute','shooter'];
-  }else if(t<110){
-    types=['bat','swarmer','shooter','brute','brute'];
-  }else{
-    types=['swarmer','shooter','brute','brute','bat'];
-  }
+  var cfg=LEVELS[game.levelIdx];
+  var count=2+Math.floor(game.kills/8);
+  if(count>10)count=10;
+  var types=cfg.types;
 
   for(var i=0;i<count;i++){
     var type=types[Math.floor(Math.random()*types.length)];
-    var side=Math.floor(Math.random()*4);
-    var x,y,marg=60;
-    if(side===0){x=-marg;y=Math.random()*H}
-    else if(side===1){x=W+marg;y=Math.random()*H}
-    else if(side===2){x=Math.random()*W;y=-marg}
-    else{x=Math.random()*W;y=H+marg}
-    spawnEnemy(type,x,y);
+    // 越后期越倾向强敌
+    if(game.kills>15&&Math.random()<0.12)type='brute';
+    if(game.kills>40&&Math.random()<0.1)type='shooter';
+    // 在玩家视野外的地图随机位置生成
+    var ang=Math.random()*Math.PI*2;
+    var dist=Math.max(W,H)*0.55+80+Math.random()*250;
+    var x=player.x+Math.cos(ang)*dist;
+    var y=player.y+Math.sin(ang)*dist;
+    x=Math.max(20,Math.min(mapW-20,x));
+    y=Math.max(20,Math.min(mapH-20,y));
+    spawnEnemy(type,x,y,cfg.enemyMul);
   }
+}
 
-  // Boss
-  if(Math.floor(t)===90&&enemies.every(function(e){return !e.isBoss})){
-    spawnEnemy('boss1',W/2,-60);
+/* 关卡推进：击杀目标 → 刷BOSS → 击杀BOSS通关 */
+function checkLevelProgress(){
+  if(levelCleared)return;
+  var cfg=LEVELS[game.levelIdx];
+  if(game.kills<cfg.targetKills)return;
+  if(cfg.bosses.length===0){
+    clearLevel();
+    return;
   }
-  if(Math.floor(t)===165&&enemies.every(function(e){return !e.isBoss})){
-    spawnEnemy('boss2',W/2,-60);
+  if(!bossSpawned){
+    bossSpawned=true;
+    spawnBosses(cfg.bosses);
+    return;
   }
+  // BOSS已出，清完则通关
+  for(var i=0;i<enemies.length;i++){
+    if(enemies[i].isBoss)return;
+  }
+  clearLevel();
+}
+
+function spawnBosses(types){
+  types.forEach(function(t,i){
+    var ang=(i/types.length)*Math.PI*2+Math.random()*0.5;
+    var dist=Math.max(W,H)*0.6;
+    var x=player.x+Math.cos(ang)*dist;
+    var y=player.y+Math.sin(ang)*dist;
+    x=Math.max(60,Math.min(mapW-60,x));
+    y=Math.max(60,Math.min(mapH-60,y));
+    spawnEnemy(t,x,y,1);
+  });
+  game.shake=15;
+  toastShow('⚠️ BOSS 来袭！');
 }
 
 /* ============================================================
@@ -565,6 +703,12 @@ function levelUp(){
   game.xp=0;
   game.xpNext=Math.floor(game.xpNext*1.4+5);
 
+  // 等级基础成长（让"推荐等级"有实际意义）
+  player.maxHp+=8;
+  player.hp+=8;
+  player.damageMul+=0.03;
+  player.speedMul+=0.02;
+
   var choices=rollUpgrades();
   var html='';
   choices.forEach(function(c,i){
@@ -695,8 +839,7 @@ function update(dt){
   player.vy=joy.dy*spd;
   player.x+=player.vx;
   player.y+=player.vy;
-  player.x=Math.max(player.radius,Math.min(W-player.radius,player.x));
-  player.y=Math.max(player.radius,Math.min(H-player.radius,player.y));
+  resolveObstacles(player,player.radius);
 
   if(joy.dx||joy.dy){
     player.facing=Math.atan2(joy.dy,joy.dx);
@@ -775,6 +918,9 @@ function update(dt){
       }
     }
 
+    // 障碍物碰撞 + 地图边界
+    resolveObstacles(e,e.radius);
+
     // 碰撞玩家
     if(d<e.radius+player.radius&&player.invuln<=0){
       if(passives.dodge>0&&Math.random()<passives.dodge){
@@ -836,8 +982,8 @@ function update(dt){
       }
     }
 
-    // 出屏移除
-    if(p.x<-50||p.x>W+50||p.y<-50||p.y>H+50){
+    // 出屏移除（按相机视野）
+    if(p.x<camX-100||p.x>camX+W+100||p.y<camY-100||p.y>camY+H+100){
       projectiles.splice(i,1);
     }
   }
@@ -894,16 +1040,21 @@ function update(dt){
     if(t.life<=0)damageTexts.splice(i,1);
   }
 
-  // 敌人生成
+  // 敌人生成（关卡节奏）
   spawnTimer-=dt;
   if(spawnTimer<=0){
     spawnWave();
-    spawnRate=Math.max(0.4,1.2-game.time*0.005);
-    spawnTimer=spawnRate;
+    spawnTimer=LEVELS[game.levelIdx].spawnInterval;
   }
+
+  // 摄像机跟随
+  updateCamera();
 
   // 屏幕震动
   if(game.shake>0)game.shake-=dt*30;
+
+  // 通关检查：击杀目标 → BOSS → 击杀BOSS通关
+  checkLevelProgress();
 
   // 玩家死亡
   if(player.hp<=0){
@@ -911,10 +1062,8 @@ function update(dt){
     gameOver();
   }
 
-  // 通关
-  if(game.time>=GAME_TIME){
-    gameWin();
-  }
+  // 屏幕提示倒计时
+  if(toast.timer>0)toast.timer-=dt;
 
   // UI 更新
   updateUI();
@@ -927,10 +1076,9 @@ function updateUI(){
   var xpPct=game.xp/game.xpNext*100;
   document.getElementById('xpFill').style.width=xpPct+'%';
   document.getElementById('xpText').textContent=Math.floor(game.xp)+'/'+game.xpNext;
-  var m=Math.floor(game.time/60);
-  var s=Math.floor(game.time%60);
-  document.getElementById('timer').textContent=m+':'+(s<10?'0':'')+s;
-  document.getElementById('kills').textContent='击杀 '+game.kills;
+  var cfg=LEVELS[game.levelIdx]||LEVELS[0];
+  document.getElementById('timer').textContent=cfg.name;
+  document.getElementById('kills').textContent='击杀 '+game.kills+'/'+cfg.targetKills;
 }
 
 /* ============================================================
@@ -940,19 +1088,6 @@ function render(){
   ctx.fillStyle='#0a0a0f';
   ctx.fillRect(0,0,W,H);
 
-  // 网格背景
-  ctx.strokeStyle='rgba(255,255,255,0.03)';
-  ctx.lineWidth=1;
-  var gridSize=50;
-  var ox=(-player.x*0.1)%gridSize;
-  var oy=(-player.y*0.1)%gridSize;
-  for(var x=ox;x<W;x+=gridSize){
-    ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();
-  }
-  for(var y=oy;y<H;y+=gridSize){
-    ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
-  }
-
   // 屏幕震动偏移
   var sx=0,sy=0;
   if(game.shake>0){
@@ -961,6 +1096,77 @@ function render(){
   }
   ctx.save();
   ctx.translate(sx,sy);
+
+  // 摄像机跟随（世界坐标 → 屏幕）
+  ctx.translate(-camX,-camY);
+
+  // 地面
+  var cfg=LEVELS[game.levelIdx]||LEVELS[0];
+  ctx.fillStyle=cfg.theme;
+  ctx.fillRect(0,0,mapW,mapH);
+
+  // 地面网格
+  ctx.strokeStyle='rgba(0,0,0,0.12)';
+  ctx.lineWidth=1;
+  var gridSize=60;
+  var gx0=Math.floor(camX/gridSize)*gridSize;
+  var gy0=Math.floor(camY/gridSize)*gridSize;
+  for(var x=gx0;x<camX+W;x+=gridSize){
+    ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,mapH);ctx.stroke();
+  }
+  for(var y=gy0;y<camY+H;y+=gridSize){
+    ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(mapW,y);ctx.stroke();
+  }
+
+  // 地面装饰（草丛/小石）
+  decorations.forEach(function(d){
+    if(d.x<camX-30||d.x>camX+W+30||d.y<camY-30||d.y>camY+H+30)return;
+    if(d.type==='grass'){
+      ctx.fillStyle='rgba(0,0,0,0.18)';
+      ctx.beginPath();
+      ctx.moveTo(d.x,d.y+d.size*2);
+      ctx.lineTo(d.x-d.size*0.7,d.y-d.size);
+      ctx.lineTo(d.x+d.size*0.7,d.y-d.size);
+      ctx.closePath();
+      ctx.fill();
+    }else{
+      ctx.fillStyle='rgba(0,0,0,0.15)';
+      ctx.beginPath();
+      ctx.arc(d.x,d.y,d.size,0,Math.PI*2);
+      ctx.fill();
+    }
+  });
+
+  // 地图边界墙
+  ctx.strokeStyle='rgba(255,215,0,0.6)';
+  ctx.lineWidth=5;
+  ctx.strokeRect(0,0,mapW,mapH);
+  ctx.strokeStyle='rgba(255,215,0,0.15)';
+  ctx.lineWidth=2;
+  ctx.strokeRect(-6,-6,mapW+12,mapH+12);
+
+  // 障碍物（石柱）
+  obstacles.forEach(function(o){
+    if(o.x<camX-o.radius||o.x>camX+W+o.radius||o.y<camY-o.radius||o.y>camY+H+o.radius)return;
+    ctx.fillStyle='#6d5a42';
+    ctx.shadowColor='rgba(0,0,0,0.5)';
+    ctx.shadowBlur=10;
+    ctx.beginPath();
+    ctx.arc(o.x,o.y,o.radius,0,Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur=0;
+    // 石纹高光
+    ctx.fillStyle='rgba(255,255,255,0.1)';
+    ctx.beginPath();
+    ctx.arc(o.x-o.radius*0.3,o.y-o.radius*0.3,o.radius*0.45,0,Math.PI*2);
+    ctx.fill();
+    // 外圈
+    ctx.strokeStyle='rgba(0,0,0,0.3)';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.arc(o.x,o.y,o.radius,0,Math.PI*2);
+    ctx.stroke();
+  });
 
   // 经验宝石
   gems.forEach(function(g){
@@ -1280,6 +1486,20 @@ function render(){
   });
 
   ctx.restore();
+
+  // 屏幕提示（BOSS出现/通关等）
+  if(toast.timer>0){
+    var ta=Math.min(1,toast.timer/0.3);
+    ctx.globalAlpha=ta;
+    ctx.fillStyle='#ffd700';
+    ctx.font='bold 22px sans-serif';
+    ctx.textAlign='center';
+    ctx.strokeStyle='rgba(0,0,0,0.8)';
+    ctx.lineWidth=4;
+    ctx.strokeText(toast.text,W/2,H*0.35);
+    ctx.fillText(toast.text,W/2,H*0.35);
+    ctx.globalAlpha=1;
+  }
 }
 
 function loop(ts){
@@ -1296,9 +1516,10 @@ function loop(ts){
 /* ============================================================
    游戏控制
    ============================================================ */
-function startGame(charType){
+function startLevel(levelIdx,charType){
   game.running=true;
   game.paused=false;
+  game.levelIdx=levelIdx;
   game.time=0;
   game.kills=0;
   game.level=1;
@@ -1306,11 +1527,15 @@ function startGame(charType){
   game.xpNext=10;
   game.shake=0;
   game.selectedChar=charType;
+  bossSpawned=false;
+  levelCleared=false;
+  toast.timer=0;
 
   var cs=CHAR_STATS[charType];
   player.charType=charType;
-  player.x=W/2;
-  player.y=H/2;
+  genMap(levelIdx);
+  player.x=mapW/2;
+  player.y=mapH/2;
   player.hp=cs.hp;
   player.maxHp=cs.hp;
   player.speed=cs.speed;
@@ -1320,6 +1545,7 @@ function startGame(charType){
   player.xpMul=1;
   player.pickupRange=60;
   player.invuln=0;
+  updateCamera();
 
   enemies=[];
   projectiles=[];
@@ -1330,39 +1556,105 @@ function startGame(charType){
   weapons=[];
   passives={dodge:0,regen:0,thorns:0,magnet:0};
   spawnTimer=0.5;
-  spawnRate=1.2;
 
   addWeapon(CHAR_WEAPONS[charType]);
   document.getElementById('start').classList.add('hide');
   document.getElementById('gameover').classList.remove('show');
+  document.getElementById('levelup').classList.remove('show');
+  document.getElementById('pause').classList.remove('show');
+  updateUI();
 }
 
 function gameOver(){
   game.running=false;
-  var m=Math.floor(game.time/60);
-  var s=Math.floor(game.time%60);
+  var cfg=LEVELS[game.levelIdx];
+  document.querySelector('.go-title').textContent='你寄了';
   document.getElementById('goStats').innerHTML=
-    '<div class="go-stat"><span>存活时间</span><span>'+m+':'+(s<10?'0':'')+s+'</span></div>'+
-    '<div class="go-stat"><span>击杀数</span><span>'+game.kills+'</span></div>'+
-    '<div class="go-stat"><span>等级</span><span>Lv'+game.level+'</span></div>'+
-    '<div class="go-stat"><span>武器数</span><span>'+weapons.length+'</span></div>';
+    '<div class="go-stat"><span>关卡</span><span>'+cfg.name+'</span></div>'+
+    '<div class="go-stat"><span>击杀</span><span>'+game.kills+' / '+cfg.targetKills+'</span></div>'+
+    '<div class="go-stat"><span>达成等级</span><span>Lv'+game.level+'</span></div>'+
+    '<div class="go-stat"><span>武器数</span><span>'+weapons.length+'</span></div>'+
+    '<div class="go-stat"><span>推荐等级</span><span>Lv'+cfg.recLv+'</span></div>';
+  document.getElementById('restartBtn').textContent='再战本关';
+  document.getElementById('menuBtn').style.display='block';
   document.getElementById('gameover').classList.add('show');
 }
 
-function gameWin(){
+function clearLevel(){
+  if(levelCleared)return;
+  levelCleared=true;
   game.running=false;
+  var cfg=LEVELS[game.levelIdx];
+
+  // 解锁下一关
+  var nextUnlock=Math.min(LEVELS.length,game.levelIdx+2);
+  if(progress.unlocked<nextUnlock){
+    progress.unlocked=nextUnlock;
+    saveProgress();
+  }
+  // 记录最佳（更高等级/更多击杀）
+  var best=progress.best[game.levelIdx+1]||{};
+  if(!best.lv||game.level>best.lv||(game.level===best.lv&&game.kills>best.kills)){
+    progress.best[game.levelIdx+1]={lv:game.level,kills:game.kills,char:game.selectedChar};
+    saveProgress();
+  }
+
+  var isLast=game.levelIdx===LEVELS.length-1;
+  var nextName=game.levelIdx+1<LEVELS.length?('解锁【'+LEVELS[game.levelIdx+1].name+'】'):'';
+  document.querySelector('.go-title').textContent=isLast?'🏆 全部通关！':'🎉 关卡通过！';
   document.getElementById('goStats').innerHTML=
-    '<div class="go-stat" style="color:#ffd700;font-size:16px;justify-content:center">🏆 生存胜利！</div>'+
-    '<div class="go-stat"><span>击杀数</span><span>'+game.kills+'</span></div>'+
-    '<div class="go-stat"><span>等级</span><span>Lv'+game.level+'</span></div>'+
-    '<div class="go-stat"><span>武器数</span><span>'+weapons.length+'</span></div>';
-  document.querySelector('.go-title').textContent='通关！';
+    '<div class="go-stat"><span>关卡</span><span>'+cfg.name+'</span></div>'+
+    '<div class="go-stat"><span>击杀</span><span>'+game.kills+'</span></div>'+
+    '<div class="go-stat"><span>达成等级</span><span>Lv'+game.level+'</span></div>'+
+    '<div class="go-stat"><span>武器数</span><span>'+weapons.length+'</span></div>'+
+    '<div class="go-stat" style="color:#66bb6a;font-size:12px;justify-content:center">'+nextName+'</div>';
+  document.getElementById('restartBtn').textContent='再打一遍';
+  document.getElementById('menuBtn').style.display='block';
   document.getElementById('gameover').classList.add('show');
+}
+
+function showMenu(){
+  renderLevelSelect();
+  document.getElementById('gameover').classList.remove('show');
+  document.getElementById('levelup').classList.remove('show');
+  document.getElementById('pause').classList.remove('show');
+  document.getElementById('start').classList.remove('hide');
 }
 
 /* ============================================================
    UI 事件
    ============================================================ */
+var selectedLevel=1;
+
+// 关卡列表渲染（读解锁进度）
+function renderLevelSelect(){
+  var el=document.getElementById('levelSelect');
+  if(selectedLevel>progress.unlocked)selectedLevel=progress.unlocked;
+  var html='';
+  for(var i=0;i<LEVELS.length;i++){
+    var lv=LEVELS[i];
+    var locked=i+1>progress.unlocked;
+    var sel=(i+1)===selectedLevel?' selected':'';
+    var best=progress.best[i+1];
+    var bestTxt=best?('<br>记录Lv'+best.lv):'';
+    html+='<div class="level-card'+(locked?' locked':'')+sel+'" data-lv="'+(i+1)+'">'+
+      '<div class="level-num">'+(locked?'🔒':'第'+(i+1)+'关')+'</div>'+
+      '<div class="level-name">'+lv.name+'</div>'+
+      '<div class="level-meta">推荐Lv'+lv.recLv+'<br>击杀'+lv.targetKills+(locked?'':bestTxt)+'</div>'+
+      '</div>';
+  }
+  el.innerHTML=html;
+  el.querySelectorAll('.level-card').forEach(function(c){
+    c.onclick=function(){
+      var lv=parseInt(c.dataset.lv);
+      if(lv>progress.unlocked)return;
+      selectedLevel=lv;
+      el.querySelectorAll('.level-card').forEach(function(x){x.classList.remove('selected')});
+      c.classList.add('selected');
+    };
+  });
+}
+
 // 角色选择
 document.querySelectorAll('.char-card').forEach(function(el){
   el.onclick=function(){
@@ -1373,13 +1665,16 @@ document.querySelectorAll('.char-card').forEach(function(el){
 });
 
 document.getElementById('startBtn').onclick=function(){
-  startGame(game.selectedChar);
+  startLevel(selectedLevel-1,game.selectedChar);
 };
 
 document.getElementById('restartBtn').onclick=function(){
-  document.querySelector('.go-title').textContent='你寄了';
   document.getElementById('gameover').classList.remove('show');
-  document.getElementById('start').classList.remove('hide');
+  startLevel(game.levelIdx,game.selectedChar);
+};
+
+document.getElementById('menuBtn').onclick=function(){
+  showMenu();
 };
 
 document.getElementById('pauseBtn').onclick=function(){
@@ -1397,11 +1692,14 @@ document.getElementById('quitBtn').onclick=function(){
   game.running=false;
   game.paused=false;
   document.getElementById('pause').classList.remove('show');
-  document.getElementById('start').classList.remove('hide');
+  showMenu();
 };
 
 // 防止滚动
 document.addEventListener('touchmove',function(e){e.preventDefault()},{passive:false});
+
+// 初始化：渲染关卡列表
+renderLevelSelect();
 
 // 启动循环
 requestAnimationFrame(loop);
