@@ -22,10 +22,22 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #timer{font-size:22px;font-weight:bold;color:#fff;text-shadow:0 0 8px rgba(255,255,255,.4);text-align:center}
 #kills{font-size:12px;color:#ffca28;text-align:center;margin-top:2px}
 
-/* 虚拟摇杆 */
-#joystick{position:absolute;bottom:0;left:0;width:50%;height:45%;pointer-events:auto;z-index:5}
-#stickBase{position:absolute;width:120px;height:120px;border-radius:50%;border:2px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);display:none;transform:translate(-50%,-50%)}
-#stickKnob{position:absolute;width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.25);border:2px solid rgba(255,255,255,.4);display:none;transform:translate(-50%,-50%)}
+/* 虚拟摇杆：左下角固定（v4横屏） */
+#joystick{position:absolute;left:10px;bottom:calc(10px + env(safe-area-inset-bottom));width:150px;height:150px;pointer-events:auto;z-index:5;touch-action:none}
+#stickBase{position:absolute;width:132px;height:132px;border-radius:50%;border:2px solid rgba(255,255,255,.18);background:rgba(18,18,32,.45);box-shadow:0 0 22px rgba(0,0,0,.45);transform:translate(-50%,-50%)}
+#stickBase::after{content:'';position:absolute;left:50%;top:50%;width:1px;height:132px;background:rgba(255,255,255,.06);transform:translate(-50%,-50%)}
+#stickKnob{position:absolute;width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.5),rgba(255,255,255,.18));border:2px solid rgba(255,255,255,.55);box-shadow:0 4px 14px rgba(0,0,0,.5);transform:translate(-50%,-50%)}
+
+/* 右手操作区：闪避 + 爆发 */
+#actions{position:absolute;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));display:flex;gap:16px;align-items:flex-end;pointer-events:auto;z-index:5}
+.action-btn{width:66px;height:66px;border-radius:50%;border:2px solid rgba(255,255,255,.28);background:rgba(18,18,32,.45);color:#fff;font-size:28px;display:flex;justify-content:center;align-items:center;cursor:pointer;position:relative;box-shadow:0 4px 14px rgba(0,0,0,.4);transition:transform .08s}
+.action-btn:active{transform:scale(.9)}
+.action-btn.cd{opacity:.55;filter:grayscale(.6)}
+.action-cd{position:absolute;inset:0;border-radius:50%;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;font-size:20px;font-weight:bold;color:#ffd700;pointer-events:none}
+.action-label{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:10px;color:#aaa;white-space:nowrap;letter-spacing:2px}
+
+/* 横屏旋转提示条（竖屏时出现） */
+#rotate{position:fixed;top:0;left:0;right:0;background:rgba(255,152,0,.92);color:#1a1a2e;font-size:12px;font-weight:bold;text-align:center;padding:6px;z-index:40;display:none;pointer-events:none;letter-spacing:1px}
 
 /* 升级面板 */
 #levelup{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;justify-content:center;align-items:center;z-index:20;pointer-events:auto}
@@ -81,10 +93,19 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
 #resumeBtn{background:linear-gradient(135deg,#43a047,#66bb6a);color:#fff;border:none;padding:10px 28px;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;width:100%;margin-bottom:8px}
 #quitBtn{background:rgba(255,255,255,.1);color:#ccc;border:none;padding:10px 28px;border-radius:8px;font-size:14px;cursor:pointer;width:100%}
 
-/* 武器图标条 */
-#weapons{position:absolute;bottom:8px;right:8px;display:flex;gap:6px}
-.wpn-icon{width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);display:flex;justify-content:center;align-items:center;font-size:16px}
+/* 武器图标条：顶栏下方（v4横屏） */
+#weapons{position:absolute;top:54px;right:10px;display:flex;gap:6px}
+.wpn-icon{width:34px;height:34px;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);display:flex;justify-content:center;align-items:center;font-size:17px}
 .wpn-lv{position:absolute;bottom:-2px;right:-2px;font-size:8px;background:#ffd700;color:#000;border-radius:4px;padding:0 3px;font-weight:bold}
+
+/* 横屏面板适配 */
+@media (orientation:landscape){
+  .start-card{max-width:680px;padding:16px 20px}
+  .levelup-card{max-width:480px}
+  .go-card{max-width:400px}
+  .level-select{max-width:560px}
+  #topbar{padding:6px 12px}
+}
 
 /* 关卡选择 */
 .level-select{display:flex;gap:8px;overflow-x:auto;padding:4px 0 10px;margin-bottom:16px;-webkit-overflow-scrolling:touch;max-width:100vw}
@@ -125,7 +146,14 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     <div id="stickBase"></div>
     <div id="stickKnob"></div>
   </div>
+
+  <div id="actions">
+    <div id="burstBtn" class="action-btn">💥<div class="action-cd" id="burstCd" style="display:none"></div><div class="action-label">爆发</div></div>
+    <div id="dashBtn" class="action-btn">💨<div class="action-cd" id="dashCd" style="display:none"></div><div class="action-label">闪避</div></div>
+  </div>
 </div>
+
+<div id="rotate">↻ 旋转手机至横屏，获得最佳割草体验</div>
 
 <!-- 开始画面 -->
 <div id="start">
@@ -151,7 +179,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#0a0a0f;font-family:
     </div>
     <div class="level-select" id="levelSelect"></div>
     <button id="startBtn">开始狩猎</button>
-    <div class="start-hint">左半屏拖动移动 · 自动攻击 · 敌人进圈受击<br>击杀目标数量通关，练到推荐等级更轻松</div>
+    <div class="start-hint">左下摇杆移动 · 右下💨闪避 / 💥爆发<br>敌人进圈自动受击，击杀目标数量通关，练到推荐等级更轻松<br>建议横屏游玩</div>
   </div>
 </div>
 
@@ -272,6 +300,34 @@ var weapons=[];
 var passives={dodge:0,regen:0,thorns:0,magnet:0};
 var spawnTimer=0;
 
+/* v4 主动技能：闪避冲刺 + 武器爆发 */
+var dash={cd:0,dur:0,ang:0};
+var burstCd=0;
+
+function tryDash(){
+  if(!game.running||game.paused||dash.cd>0)return;
+  dash.cd=2.5;
+  dash.dur=0.15;
+  player.invuln=Math.max(player.invuln,0.35);
+  var ang=(joy.dx||joy.dy)?Math.atan2(joy.dy,joy.dx):player.facing;
+  dash.ang=ang;
+  for(var i=0;i<12;i++)spawnParticle(player.x,player.y,'#81d4fa',4,0.4);
+  game.shake=Math.max(game.shake,3);
+}
+
+function tryBurst(){
+  if(!game.running||game.paused||burstCd>0)return;
+  burstCd=6;
+  weapons.forEach(function(w){
+    if(w.mode!=='orbit'){
+      attackInRange(w);
+      w.timer=w.cooldown*player.cooldownMul;
+    }
+  });
+  ringFX.push({x:player.x,y:player.y,r:150,life:0.5,maxLife:0.5,color:'#ffd700'});
+  game.shake=Math.max(game.shake,8);
+}
+
 /* ============================================================
    地图系统：大地图 + 障碍物 + 摄像机
    ============================================================ */
@@ -360,9 +416,9 @@ function updateCamera(){
 var WEAPON_DEFS={
   // mode: orbit=环绕持续伤害 | pulse=蓄力范围爆发 | strike=圈内锁定瞬击
   knife:{name:'飞刀',icon:'🔪',desc:'近身环绕切割',mode:'orbit',radius:75,damage:11,count:3,color:'#e0e0e0'},
-  fireball:{name:'火球',icon:'🔥',desc:'圈内蓄力爆发',mode:'pulse',radius:120,damage:30,count:1,color:'#ff6f00'},
-  arrow:{name:'箭雨',icon:'🏹',desc:'圈内锁定连射',mode:'strike',radius:150,damage:10,count:2,color:'#66bb6a'},
-  lightning:{name:'闪电',icon:'⚡',desc:'圈内随机劈击',mode:'strike',radius:200,damage:22,count:1,color:'#ffee58'},
+  fireball:{name:'火球',icon:'🔥',desc:'圈内蓄力爆发',mode:'pulse',radius:120,damage:30,count:1,color:'#ff6f00',cooldown:2.2},
+  arrow:{name:'箭雨',icon:'🏹',desc:'圈内锁定连射',mode:'strike',radius:150,damage:10,count:2,color:'#66bb6a',cooldown:1.3},
+  lightning:{name:'闪电',icon:'⚡',desc:'圈内随机劈击',mode:'strike',radius:200,damage:22,count:1,color:'#ffee58',cooldown:1.8},
   shield:{name:'护盾',icon:'🛡️',desc:'贴身防御护卫',mode:'orbit',radius:55,damage:9,count:2,color:'#64b5f6'},
   ice:{name:'冰锥',icon:'❄️',desc:'环绕减速控场',mode:'orbit',radius:95,damage:8,count:3,color:'#80deea'}
 };
@@ -394,7 +450,7 @@ function addWeapon(type){
       mode:def.mode,
       radius:def.radius,
       color:def.color,
-      cooldown:def.cooldown,
+      cooldown:def.cooldown||1.5,
       timer:0,
       damage:def.damage,
       count:def.count,
@@ -738,28 +794,36 @@ function levelUp(){
 }
 
 /* ============================================================
-   输入：虚拟摇杆
+   输入：固定虚拟摇杆（v4横屏，左下角固定）
    ============================================================ */
-var joy={active:false,dx:0,dy:0,baseX:0,baseY:0,touchId:null};
+var joy={active:false,dx:0,dy:0,touchId:null};
 var stickBase=document.getElementById('stickBase');
 var stickKnob=document.getElementById('stickKnob');
 var joyArea=document.getElementById('joystick');
+var joyCX=0,joyCY=0,joyMaxD=56;
+
+/* 摇杆中心 = 摇杆区域中心（resize时重算） */
+function centerStick(){
+  var r=joyArea.getBoundingClientRect();
+  joyCX=r.left+r.width/2;
+  joyCY=r.top+r.height/2;
+  joy.dx=0;joy.dy=0;
+  stickBase.style.left=joyCX+'px';
+  stickBase.style.top=joyCY+'px';
+  stickKnob.style.left=joyCX+'px';
+  stickKnob.style.top=joyCY+'px';
+}
+window.addEventListener('resize',centerStick);
+centerStick();
 
 joyArea.addEventListener('touchstart',function(e){
   e.preventDefault();
   if(joy.active)return;
-  var t=e.changedTouches[0];
   joy.active=true;
-  joy.touchId=t.identifier;
-  joy.baseX=t.clientX;
-  joy.baseY=t.clientY;
+  joy.touchId=e.changedTouches[0].identifier;
   joy.dx=0;joy.dy=0;
-  stickBase.style.display='block';
-  stickKnob.style.display='block';
-  stickBase.style.left=t.clientX+'px';
-  stickBase.style.top=t.clientY+'px';
-  stickKnob.style.left=t.clientX+'px';
-  stickKnob.style.top=t.clientY+'px';
+  stickKnob.style.left=joyCX+'px';
+  stickKnob.style.top=joyCY+'px';
 },{passive:false});
 
 joyArea.addEventListener('touchmove',function(e){
@@ -767,15 +831,14 @@ joyArea.addEventListener('touchmove',function(e){
   for(var i=0;i<e.changedTouches.length;i++){
     var t=e.changedTouches[i];
     if(t.identifier!==joy.touchId)continue;
-    var dx=t.clientX-joy.baseX;
-    var dy=t.clientY-joy.baseY;
+    var dx=t.clientX-joyCX;
+    var dy=t.clientY-joyCY;
     var d=Math.sqrt(dx*dx+dy*dy);
-    var maxD=60;
-    if(d>maxD){dx=dx/d*maxD;dy=dy/d*maxD;d=maxD}
-    joy.dx=dx/maxD;
-    joy.dy=dy/maxD;
-    stickKnob.style.left=(joy.baseX+dx)+'px';
-    stickKnob.style.top=(joy.baseY+dy)+'px';
+    if(d>joyMaxD){dx=dx/d*joyMaxD;dy=dy/d*joyMaxD;d=joyMaxD}
+    joy.dx=dx/joyMaxD;
+    joy.dy=dy/joyMaxD;
+    stickKnob.style.left=(joyCX+dx)+'px';
+    stickKnob.style.top=(joyCY+dy)+'px';
   }
 },{passive:false});
 
@@ -785,8 +848,8 @@ function endTouch(e){
       joy.active=false;
       joy.dx=0;joy.dy=0;
       joy.touchId=null;
-      stickBase.style.display='none';
-      stickKnob.style.display='none';
+      stickKnob.style.left=joyCX+'px';
+      stickKnob.style.top=joyCY+'px';
     }
   }
 }
@@ -796,31 +859,25 @@ joyArea.addEventListener('touchcancel',endTouch,{passive:false});
 // 鼠标支持（桌面测试）
 joyArea.addEventListener('mousedown',function(e){
   joy.active=true;
-  joy.baseX=e.clientX;joy.baseY=e.clientY;
   joy.dx=0;joy.dy=0;
-  stickBase.style.display='block';
-  stickKnob.style.display='block';
-  stickBase.style.left=e.clientX+'px';
-  stickBase.style.top=e.clientY+'px';
-  stickKnob.style.left=e.clientX+'px';
-  stickKnob.style.top=e.clientY+'px';
+  stickKnob.style.left=joyCX+'px';
+  stickKnob.style.top=joyCY+'px';
 });
 window.addEventListener('mousemove',function(e){
   if(!joy.active)return;
-  var dx=e.clientX-joy.baseX;
-  var dy=e.clientY-joy.baseY;
+  var dx=e.clientX-joyCX;
+  var dy=e.clientY-joyCY;
   var d=Math.sqrt(dx*dx+dy*dy);
-  var maxD=60;
-  if(d>maxD){dx=dx/d*maxD;dy=dy/d*maxD}
-  joy.dx=dx/maxD;joy.dy=dy/maxD;
-  stickKnob.style.left=(joy.baseX+dx)+'px';
-  stickKnob.style.top=(joy.baseY+dy)+'px';
+  if(d>joyMaxD){dx=dx/d*joyMaxD;dy=dy/d*joyMaxD}
+  joy.dx=dx/joyMaxD;joy.dy=dy/joyMaxD;
+  stickKnob.style.left=(joyCX+dx)+'px';
+  stickKnob.style.top=(joyCY+dy)+'px';
 });
 window.addEventListener('mouseup',function(){
   if(!joy.active)return;
   joy.active=false;joy.dx=0;joy.dy=0;
-  stickBase.style.display='none';
-  stickKnob.style.display='none';
+  stickKnob.style.left=joyCX+'px';
+  stickKnob.style.top=joyCY+'px';
 });
 
 /* ============================================================
@@ -837,6 +894,15 @@ function update(dt){
   var spd=player.speed*player.speedMul;
   player.vx=joy.dx*spd;
   player.vy=joy.dy*spd;
+  // 冲刺叠加（v4主动技能）
+  if(dash.dur>0){
+    dash.dur-=dt;
+    player.vx+=Math.cos(dash.ang)*16;
+    player.vy+=Math.sin(dash.ang)*16;
+    if(Math.random()<dt*40)spawnParticle(player.x,player.y,'#81d4fa',4,0.3);
+  }
+  if(dash.cd>0)dash.cd-=dt;
+  if(burstCd>0)burstCd-=dt;
   player.x+=player.vx;
   player.y+=player.vy;
   resolveObstacles(player,player.radius);
@@ -1079,6 +1145,14 @@ function updateUI(){
   var cfg=LEVELS[game.levelIdx]||LEVELS[0];
   document.getElementById('timer').textContent=cfg.name;
   document.getElementById('kills').textContent='击杀 '+game.kills+'/'+cfg.targetKills;
+
+  // v4 技能CD显示
+  var dashEl=document.getElementById('dashBtn'),dashCd=document.getElementById('dashCd');
+  var burstEl=document.getElementById('burstBtn'),burstCdEl=document.getElementById('burstCd');
+  if(dash.cd>0){dashEl.classList.add('cd');dashCd.textContent=Math.ceil(dash.cd);dashCd.style.display='flex'}
+  else{dashEl.classList.remove('cd');dashCd.style.display='none'}
+  if(burstCd>0){burstEl.classList.add('cd');burstCdEl.textContent=Math.ceil(burstCd);burstCdEl.style.display='flex'}
+  else{burstEl.classList.remove('cd');burstCdEl.style.display='none'}
 }
 
 /* ============================================================
@@ -1555,6 +1629,8 @@ function startLevel(levelIdx,charType){
   ringFX=[];
   weapons=[];
   passives={dodge:0,regen:0,thorns:0,magnet:0};
+  dash={cd:0,dur:0,ang:0};
+  burstCd=0;
   spawnTimer=0.5;
 
   addWeapon(CHAR_WEAPONS[charType]);
@@ -1694,6 +1770,25 @@ document.getElementById('quitBtn').onclick=function(){
   document.getElementById('pause').classList.remove('show');
   showMenu();
 };
+
+/* v4 主动技能按钮（按下即触发） */
+function bindAction(id,fn){
+  var el=document.getElementById(id);
+  el.addEventListener('touchstart',function(e){e.preventDefault();fn();},{passive:false});
+  el.addEventListener('mousedown',function(e){e.preventDefault();fn();});
+}
+bindAction('dashBtn',tryDash);
+bindAction('burstBtn',tryBurst);
+
+/* 横屏方向检测：竖屏时提示旋转 */
+function checkOrientation(){
+  document.getElementById('rotate').style.display=(window.innerHeight>window.innerWidth)?'block':'none';
+}
+window.addEventListener('resize',checkOrientation);
+window.addEventListener('orientationchange',function(){
+  setTimeout(function(){centerStick();checkOrientation()},250);
+});
+checkOrientation();
 
 // 防止滚动
 document.addEventListener('touchmove',function(e){e.preventDefault()},{passive:false});
